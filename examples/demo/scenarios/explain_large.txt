@@ -1,0 +1,4 @@
+# A large flagged facility, and the direct standardization
+The outcome is HOSPITALIZED, one row per patient-month, and a higher rate is worse. FACILITY identifies the facility and PATIENT the patient. Facilities with fewer than 11 patients are excluded. Adjust for AGE, FEMALE, DIABETES, HEART_FAILURE, COPD, BMI, YEARS_ON_DIALYSIS, NURSING_HOME, ALBUMIN and HEMOGLOBIN.
+Why is facility F00075 flagged worse?
+What would change under direct standardization?

@@ -1,0 +1,23 @@
+{
+ "outcome": "HOSPITALIZED",
+ "event_direction": "higher_is_worse",
+ "unit": "patient_month",
+ "provider": "FACILITY",
+ "patient": "PATIENT",
+ "eligibility": 11,
+ "adjusters": [
+  "AGE",
+  "FEMALE",
+  "DIABETES",
+  "HEART_FAILURE",
+  "COPD",
+  "BMI",
+  "YEARS_ON_DIALYSIS",
+  "NURSING_HOME",
+  "ALBUMIN",
+  "HEMOGLOBIN"
+ ],
+ "standardization": "indirect",
+ "norm": "median",
+ "consequential_tail": "worse"
+}

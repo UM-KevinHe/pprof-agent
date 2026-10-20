@@ -1,0 +1,3 @@
+# A decoy: much sicker patients, but no true departure
+The outcome is HOSPITALIZED, one row per patient-month, and a higher rate is worse. FACILITY identifies the facility and PATIENT the patient. Facilities with fewer than 11 patients are excluded. Adjust for AGE, FEMALE, DIABETES, HEART_FAILURE, COPD, BMI, YEARS_ON_DIALYSIS, NURSING_HOME, ALBUMIN and HEMOGLOBIN.
+Is facility F00163 flagged? Its patients look much sicker than elsewhere.

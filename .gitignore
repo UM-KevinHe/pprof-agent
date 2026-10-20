@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+runs/
+examples/*/runs/
+examples/*/data.csv.bak
+site/data/*/cli.json
+*.rds
+*.log
+.DS_Store

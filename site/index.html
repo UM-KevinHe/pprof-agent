@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pprof Agent</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="name">pprof Agent</span><span class="motto">the model plans · evidence decides · numbers only from the engine</span></div>
+    <div class="selectors">
+      <label>Data set <select id="dataset"></select></label>
+      <label>Scenario <select id="run"></select></label>
+      <span class="badge" id="mode">replay</span>
+      <span id="live-controls" hidden><button class="btn primary small" id="live-new" type="button">New live analysis</button></span>
+    </div>
+  </div>
+</header>
+<nav class="tabs" aria-label="sections">
+  <div class="tabs-inner" role="tablist">
+    <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" data-tab="conversation" aria-selected="false">Conversation</button>
+    <button class="tab" role="tab" data-tab="explorer" aria-selected="false">Flag explorer</button>
+    <button class="tab" role="tab" data-tab="report" aria-selected="false">Report</button>
+    <button class="tab" role="tab" data-tab="audit" aria-selected="false">Audit</button>
+  </div>
+</nav>
+<main id="main"><div class="loading">Loading…</div></main>
+<footer>pprof Agent · an AI agent for provider profiling · synthetic example data; no real patient or facility data.</footer>
+<script src="assets/app.js"></script>
+</body>
+</html>
