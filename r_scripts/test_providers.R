@@ -35,7 +35,7 @@ run_step({
   lev <- rownames(fit$gamma)
   gam <- as.numeric(fit$gamma[, 1])
   null_value <- if (identical(null, "median")) stats::median(gam) else null
-  r <- test_fe(fit, test = TEST_MAP[[test]], null = null, alternative = alternative, level = level,
+  r <- test_fe(if (test == "wald") wald_fit(fit) else fit, test = TEST_MAP[[test]], null = null, alternative = alternative, level = level,
                threads = threads(), n = as.integer(arg("n_resample", 10000)))
   i <- match(lev, rownames(r))
   sizes <- provider_sizes(fit)
@@ -79,11 +79,28 @@ run_step({
                     funnel_lower = funnel_lower, funnel_upper = funnel_upper, stringsAsFactors = FALSE)
   write_table(tab, run_dir, paste0("test_", key))
   ok <- !is.na(tab$flag_raw)
+  # the statistics read against N(0, 1), overall and by provider size (rank quartiles of patients, q1 the
+  # smallest): the share beyond the two-sided critical value (about 100 * (1 - level) when N(0, 1) describes
+  # them) and a robust scale, MAD / 0.6745 (about 1); what the planner reads to judge the theoretical null
+  z <- tab$stat; zf <- is.finite(z)
+  crit2 <- stats::qnorm(1 - (1 - level) / 2)
+  qs <- c("q1", "q2", "q3", "q4")
+  quart <- if (sum(zf) >= 8) qs[cut(rank(tab$n_patients, ties.method = "first"), 4, labels = FALSE)] else rep(NA_character_, length(z))
+  by_size <- function(f) stats::setNames(lapply(qs, function(q) {
+    k <- zf & quart %in% q
+    if (sum(k) >= 3) round(f(z[k]), 3) else NULL
+  }), qs)
+  beyond <- function(x) 100 * mean(abs(x) > crit2)
   list(test = test, key = key, null = null, null_value = null_value, alternative = alternative, level = level,
        crit = crit, n_tested = sum(ok), n_na = sum(!ok),
        flagged_higher = sum(tab$flag_raw == 1, na.rm = TRUE), flagged_lower = sum(tab$flag_raw == -1, na.rm = TRUE),
        pct_higher = 100 * mean(tab$flag_raw[ok] == 1), pct_lower = 100 * mean(tab$flag_raw[ok] == -1),
        stat = q5(tab$stat), estimate_kind = estimate_kind, precision_kind = precision_kind, limit_rule = limit_rule,
+       z_beyond_pct = if (any(zf)) round(beyond(z[zf]), 3) else NULL,
+       z_beyond_higher_pct = if (any(zf)) round(100 * mean(z[zf] > crit2), 3) else NULL,
+       z_beyond_lower_pct = if (any(zf)) round(100 * mean(z[zf] < -crit2), 3) else NULL,
+       z_beyond_pct_by_size = by_size(beyond),
+       z_scale = if (sum(zf) >= 3) round(stats::mad(z[zf]), 3) else NULL, z_scale_by_size = by_size(stats::mad),
        seconds = seconds_since(t0),
        tables = stats::setNames(list(table_path(run_dir, paste0("test_", key))), paste0("test_", key)))
 })

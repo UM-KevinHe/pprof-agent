@@ -47,6 +47,22 @@ def test_full_run(tmp_path):
     assert report.check_no_digits("the rate was [event_rate_pct] percent") is None
     assert report.check_no_digits("the rate was 12 percent") is not None
     assert report.resolve("[n_eligible] providers", refs).startswith(str(refs["n_eligible"]))
+    # the diagnostics the planner reads: events per adjuster, the statistics against N(0, 1) by size quartile
+    fs = s.get("fit").summary
+    assert fs["events_per_adjuster"] > 0 and "at_bound_providers" in fs
+    ts = s.get(f"test:{rec['test']}").summary
+    assert set(ts["z_scale_by_size"]) == {"q1", "q2", "q3", "q4"} and 0 <= ts["z_beyond_pct"] <= 100
+    assert abs(ts["z_beyond_higher_pct"] + ts["z_beyond_lower_pct"] - ts["z_beyond_pct"]) < 1e-2
+    # the calibration with power (planted departures): rates carry power, the reported test follows the score
+    from pprof_agent import loop
+    from pprof_agent.engine import executor
+    cal = executor.execute(s, "calibrate_tests", {"n_sim": 20, "max_providers": 60}, source="harness")
+    assert cal.summary["power"] and cal.summary["effect_or"] == 1.5 and cal.summary["n_planted_per_tail"] >= 1
+    assert all(r.get("power_pct") is not None for r in cal.summary["rates"])
+    rec2 = loop.recommend(s)
+    assert rec2["test"] in s.admissible.tests_reported and "power" in rec2["reasons"]["test"], rec2
+    refs = report.build_references(s)
+    assert refs.get("calibration_power_pct") is not None and refs.get("calibration_effect_or") == 1.5
 
 
 def test_loop_supplies_prerequisites_of_a_proposal(tmp_path):

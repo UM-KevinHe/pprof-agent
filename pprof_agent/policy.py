@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Dict
 
 POLICY_DIR = Path(__file__).resolve().parent / "policies"
-NAMES = ("intent", "spec_extraction", "next_step", "figure_selection", "report_prose", "ask", "refusal", "explain")
+NAMES = ("intent", "spec_extraction", "next_step", "figure_selection", "report_prose", "ask", "refusal", "explain",
+         "choose_procedure")
 HEADINGS = ("## What you are doing", "## What the system is", "## Before you decide", "## The fields",
             "## What you must not do")
 

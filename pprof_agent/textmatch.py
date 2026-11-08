@@ -1,4 +1,5 @@
-"""Did the analyst actually write this column name? One predicate (chapter II `textmatch.py`, unchanged).
+"""Did the analyst actually write this column name? One predicate (chapter II `textmatch.py`; ties between
+names of equal length broken deterministically, 2026-10-28).
 
 Exactly three spellings of a column name count as writing it: the name itself, underscores as spaces,
 underscores as hyphens. No stemming, no edit distance, no synonyms. A name the message does not contain
@@ -20,9 +21,12 @@ def _pattern(form: str) -> str:
 
 
 def names_mentioned(text: str, columns: Iterable[str]) -> List[str]:
+    """The names the text writes. Longer names claim their words first; between names of equal length (`pid`
+    and the column PID) the one written in the text's own case comes first, then the alphabet, so the answer
+    never depends on the order of a set."""
     low = text.lower()
     found = []
-    for col in sorted(set(columns), key=len, reverse=True):
+    for col in sorted(set(columns), key=lambda c: (-len(c), c not in text, c)):
         hit = False
         for form in variants(col.lower()):
             pat = _pattern(form)

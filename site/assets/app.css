@@ -169,3 +169,16 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .hero .step b { font-family: var(--mono); color: var(--accent); }
 .truth { font-size: .8rem; }
 footer { color: var(--muted); font-size: .8rem; text-align: center; padding: 20px; }
+
+/* ---------- live mode: composer, progress, results strip ---------- */
+.composer textarea { font-size: .95rem; line-height: 1.45; }
+.status.busy::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; vertical-align: -1px; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .status.busy::before { animation: none; } }
+.progress { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: .8rem; color: var(--muted); font-family: var(--mono); }
+.progress:empty { display: none; }
+.progress li { padding-left: 20px; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress li::before { content: "✓"; position: absolute; left: 2px; color: var(--better); font-weight: 600; }
+.progress li.now { color: var(--ink); }
+.progress li.now::before { content: "›"; color: var(--accent); }
+.strip .tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }

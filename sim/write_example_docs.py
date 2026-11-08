@@ -115,12 +115,18 @@ def scenarios(name: str, t: dict) -> dict:
     small_worse = [p for p, c in t["worse_size_class"].items() if c == "large"][:1] or t["worse"][:1]   # the facility the demo asks about: a large one, reliably flagged
     large_worse = [p for p, c in t["worse_size_class"].items() if c == "large"][:1] or t["worse"][-1:]
     s = {}
-    s["demo"] = [f"# The full conversation: declare the measure in a sentence, ask about the flags, a facility, an alternative, the test; draw figures", declare,
+    if t["kind"] == "demo":
+        # the recorded demo: the measure in plain words, then the questions an analyst asks of a result
+        declare = (f"I want to profile the dialysis facilities in this file on monthly hospitalization. The outcome is {t['outcome']} "
+                   f"(1 if the patient was admitted that month), one row per {noun}, and a higher rate is worse. "
+                   f"{t['provider']} identifies the facility and {t['patient']} the patient. Leave out facilities with fewer than "
+                   f"{m['eligibility']} patients. Please adjust for {adj_words}.")
+    s["demo"] = [f"# The full conversation: declare the measure in plain words, ask about the flags, a facility, the other null, the test; draw figures", declare,
                  "Which facilities are flagged worse than expected, and how sure can I be about them?",
                  f"Why is facility {small_worse[0]} flagged worse?",
                  "What would change if we used the theoretical null instead?",
-                 "Which test is reported, and why not the robust score test?",
-                 "Draw the funnel plot and the observed-against-expected plot."]
+                 "Why not use the Wald test?",
+                 "Show me the funnel plot and the observed-against-expected plot."]
     if t["kind"] == "discharge":
         s["demo"].insert(3, "Can you adjust for the discharging hospital as well?")
     s["ghost_column"] = [f"# A declaration that names a column the file does not have", declare.replace(f" and {adj[-1]}.", f", {adj[-1]} and HEMOGLOBIN_LAB.")]

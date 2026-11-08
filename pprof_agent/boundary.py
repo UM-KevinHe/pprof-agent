@@ -130,17 +130,21 @@ SPEC_SCHEMA = _obj({
 })
 
 
-def extract_specification(client: Any, model: str, message: str, profile: Dict[str, Any],
-                          spec: MeasureSpecification, record_to: Optional[list] = None) -> Tuple[MeasureSpecification, List[str]]:
-    """Boundary 1: read the specification out of prose; the harness checks every field."""
+def spec_extraction_user(message: str, profile: Dict[str, Any]) -> str:
+    """The user turn of the extraction call (also what the training data for this act is built on)."""
     cols = profile_columns(profile)
-    user = ("Columns of the file: " + ", ".join(cols) + "\n\n"
+    return ("Columns of the file: " + ", ".join(cols) + "\n\n"
             + "Fields and their allowed values: " + "; ".join(
                 f"{f} in {{{', '.join(ENUMS[f])}}}" if f in ENUMS else f"{f}: a column name" if f in COLUMN_FIELDS
                 else f"{f}: {'column names, comma separated' if f == 'adjusters' else 'an integer'}" for f in SPEC_FIELDS)
             + "\n\nThe analyst wrote:\n" + message)
-    raw = _chat(client, model, policy.load("spec_extraction"), user, SPEC_SCHEMA, "spec_extraction", max_tokens=900,
-                record_to=record_to)
+
+
+def extract_specification(client: Any, model: str, message: str, profile: Dict[str, Any],
+                          spec: MeasureSpecification, record_to: Optional[list] = None) -> Tuple[MeasureSpecification, List[str]]:
+    """Boundary 1: read the specification out of prose; the harness checks every field."""
+    raw = _chat(client, model, policy.load("spec_extraction"), spec_extraction_user(message, profile), SPEC_SCHEMA,
+                "spec_extraction", max_tokens=900, record_to=record_to)
     return verify_extraction(raw, message, profile, spec)
 
 
@@ -417,6 +421,9 @@ _MEANINGS = {
     "calibration_nominal_pct": "the nominal one-sided level in percent",
     "calibration_n_sim": "the number of simulated data sets in the calibration",
     "calibration_default_rate_pct": "the rule default test's simulated type I error in the consequential tail, in percent",
+    "calibration_power_pct": "the reported test's simulated power in the consequential tail (share of planted providers found), in percent",
+    "calibration_default_power_pct": "the rule default test's simulated power in the consequential tail, in percent",
+    "calibration_effect_or": "the odds ratio of the departures planted in the calibration simulation",
 }
 
 

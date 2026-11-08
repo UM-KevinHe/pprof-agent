@@ -38,7 +38,7 @@ class _Completion:
 def _default_intent(user: str) -> Dict[str, Any]:
     msg = user.split("The analyst wrote:\n", 1)[-1]
     low = msg.lower()
-    if "hospital" in low:
+    if re.search(r"\bhospital\b", low):      # the discharging hospital of the tests, not an outcome such as HOSPITALIZED
         return {"reasoning": "out", "intents": [{"kind": "out_of_scope", "evidence": msg[:40], "out_of_scope_reason": "crossed_providers"}]}
     if any(w in low for w in ("outcome is", "adjust for", "identifies", "one row per", "higher rate")):
         return {"reasoning": "declares", "intents": [{"kind": "declare_specification", "evidence": msg[:40], "out_of_scope_reason": None}]}
@@ -79,6 +79,9 @@ def _default_spec(user: str) -> Dict[str, Any]:
     m = re.search(r"higher rate is (better|worse)", msg, re.I)
     if m:
         fields.append({"field": "event_direction", "value": f"higher_is_{m.group(1).lower()}", "evidence": m.group(0)})
+    m = re.search(r"fewer than (\d+) patients", msg, re.I)
+    if m:
+        fields.append({"field": "eligibility", "value": m.group(1), "evidence": m.group(0)})
     return {"reasoning": "quoted", "fields": fields}
 
 

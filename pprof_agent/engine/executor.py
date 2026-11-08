@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .. import actions
+from .. import actions, rules
 from ..state import Result, Session
 from . import rbridge
 
@@ -104,9 +104,12 @@ def build_payload(session: Session, name: str, args: Dict[str, Any]) -> Dict[str
         tests = list(a.get("tests") or (adm.tests_computed if adm else []))
         if adm:                       # the reportable tests are always calibrated; the planner may add alternatives
             tests = [t for t in adm.tests_computed if t in set(tests) | set(adm.tests_reported)]
+        # power is measured by default (planted departures); an explicit null effect_or asks for the size-only simulation
+        effect_or = a["effect_or"] if "effect_or" in a else rules.CALIBRATION["effect_or"]
         return {"run_dir": run_dir, "tests": list(tests), "n_sim": int(a.get("n_sim") or 100),
                 "max_providers": int(a.get("max_providers") or 500), "seed": DEFAULT_SEED, "level": s.level or 0.95,
-                "n_groups": 4}
+                "n_groups": 4, "effect_or": None if effect_or is None else float(effect_or),
+                "planted_frac": float(a.get("planted_frac") or rules.CALIBRATION["planted_frac"])}
     if name == "subset":
         return {"run_dir": run_dir, "provider": str(a.get("provider")), "by": list(a.get("by") or s.adjusters or []), "max_by": 8}
     raise ValueError(f"no payload for action {name}")

@@ -1,7 +1,7 @@
-# The full conversation: declare the measure in a sentence, ask about the flags, a facility, an alternative, the test; draw figures
-The outcome is HOSPITALIZED, one row per patient-month, and a higher rate is worse. FACILITY identifies the facility and PATIENT the patient. Facilities with fewer than 11 patients are excluded. Adjust for AGE, FEMALE, DIABETES, HEART_FAILURE, COPD, BMI, YEARS_ON_DIALYSIS, NURSING_HOME, ALBUMIN and HEMOGLOBIN.
+# The full conversation: declare the measure in plain words, ask about the flags, a facility, the other null, the test; draw figures
+I want to profile the dialysis facilities in this file on monthly hospitalization. The outcome is HOSPITALIZED (1 if the patient was admitted that month), one row per patient-month, and a higher rate is worse. FACILITY identifies the facility and PATIENT the patient. Leave out facilities with fewer than 11 patients. Please adjust for AGE, FEMALE, DIABETES, HEART_FAILURE, COPD, BMI, YEARS_ON_DIALYSIS, NURSING_HOME, ALBUMIN and HEMOGLOBIN.
 Which facilities are flagged worse than expected, and how sure can I be about them?
-Why is facility F00075 flagged worse?
+Why is facility F00087 flagged worse?
 What would change if we used the theoretical null instead?
-Which test is reported, and why not the robust score test?
-Draw the funnel plot and the observed-against-expected plot.
+Why not use the Wald test?
+Show me the funnel plot and the observed-against-expected plot.

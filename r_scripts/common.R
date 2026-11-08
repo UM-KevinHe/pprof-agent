@@ -104,3 +104,25 @@ provider_sizes <- function(fit) {
 }
 
 seconds_since <- function(t0) as.numeric(Sys.time() - t0, units = "secs")
+
+# pprofR's model-based Wald standard error adds the uncertainty of beta evaluated at Z = 0, so it changes with
+# where the covariates are centred (AGE in years or in years minus 65 gives different flags), while the test
+# compares a provider with the median provider, where that part largely cancels. The Wald test is therefore
+# run on a copy of the fit with the adjusters centred: the effect difference in the numerator does not move,
+# and no other test may read this copy (the score and exact tests evaluate Z beta at the null directly).
+wald_fit <- function(fit) {
+  zc <- fit$char_list$Z.char
+  f <- fit
+  f$data_include[zc] <- lapply(f$data_include[zc], function(x) x - mean(x))
+  f
+}
+
+# the within-patient correlation of standardized residuals: over patients with >= 2 rows, the mean pairwise
+# product (the fit reports it; the calibration simulation matches its patient random effect to it)
+within_corr <- function(e, pat) {
+  s <- rowsum(e, pat); s2 <- rowsum(e^2, pat); n <- as.numeric(table(pat)[rownames(s)])
+  k <- n >= 2
+  if (!any(k)) return(0)
+  pairs <- (s[k]^2 - s2[k]) / 2
+  sum(pairs) / sum(n[k] * (n[k] - 1) / 2)
+}

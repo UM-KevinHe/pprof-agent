@@ -1,0 +1,19 @@
+{
+ "datasets": [
+  {
+   "name": "demo",
+   "title": "Monthly hospitalization among dialysis patients",
+   "runs": [
+    {
+     "name": "demo",
+     "title": "The full conversation: declare the measure in plain words, ask about the flags, a facility, the other null, the test; draw figures",
+     "file": "data/demo/demo.json",
+     "phase": "DONE",
+     "with_model": true,
+     "size_bytes": 1464284,
+     "messages": 13
+    }
+   ]
+  }
+ ]
+}

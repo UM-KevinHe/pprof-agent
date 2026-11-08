@@ -13,7 +13,7 @@ core, loop.py), so an alternative can never be suppressed.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 TESTS = ("exact", "score", "wald", "robust_wald", "robust_score", "stabilized_wald", "stabilized_score")
 WALD_TYPE = ("wald", "robust_wald", "stabilized_wald")
@@ -34,6 +34,27 @@ THRESHOLDS: Dict[str, float] = {
     "stabilized_max_rows": 5000,     # pprofR pools a matrix over a patient's rows; larger patients refuse
     "exact_max_trials": 20000,       # the exact test enumerates trials; above this the score test is the default
 }
+
+# The calibration simulation with power (Neyman-Pearson: hold the type I error at the nominal level, then take the
+# most power). A tail's score is power - lam * max(0, size - tol * nominal) / nominal, truncated at `floor`; the
+# reported test maximizes w * score(consequential tail) + (1 - w) * score(other tail).
+CALIBRATION: Dict[str, float] = {
+    "effect_or": 1.5,                # the planted departure, an odds ratio on the logit scale
+    "planted_frac": 0.05,            # the share of simulated providers planted, half in each tail
+    "tol": 1.1,                      # type I error up to 1.1 x nominal counts as calibrated (Bradley 1978, stringent)
+    "lam": 2.0,                      # power lost per nominal level of type I error beyond the tolerance
+    "floor": -1.0,                   # a tail's score is never below this
+    "w_consequential": 2 / 3,        # the weight of the consequential tail
+}
+
+
+def np_score(size_pct: float, power_pct: Optional[float], nominal_pct: float,
+             c: Dict[str, float] = CALIBRATION) -> float:
+    """One tail's score from the simulated type I error and power (both in percent): the power, less a penalty
+    for type I error beyond the tolerance, truncated at the floor. A missing power counts as none."""
+    power = float(power_pct) / 100 if power_pct is not None and power_pct == power_pct else 0.0
+    excess = max(0.0, float(size_pct) - c["tol"] * float(nominal_pct)) / float(nominal_pct)
+    return max(power - c["lam"] * excess, c["floor"])
 
 
 @dataclass

@@ -309,10 +309,36 @@ function renderConversation() {
   ]);
   const msgs = transcript || scriptMessages(b);
   fill(chat, msgs);
+  const isLive = live.sid && b.run === live.sid;
+  if (isLive) {
+    head.querySelector('h2').textContent = 'Live analysis';
+    head.querySelector('.sub').textContent = `${b.dataset && b.dataset.name ? b.dataset.name : 'your file'} · ${live.api && live.api.model ? 'planned by the local model ' + live.api.model : 'harness only'} · every number from the engine`;
+    head.querySelector('div').remove();
+  }
   const left = el('div', { style: 'display:grid;gap:12px;min-width:0' }, [chat]);
-  if (live.sid && b.run === live.sid) left.append(composer());
-  view.append(head, el('div', { class: 'convo' }, [left, timelineCard(b)]));
+  if (isLive) left.append(composer());
+  const strip = resultsStrip(b);
+  view.append(head, strip, el('div', { class: 'convo' }, [left, timelineCard(b)]));
   return view;
+}
+function resultsStrip(b) {
+  const rec = b.recommended || {};
+  if (b.phase !== 'DONE' || !rec.test) return el('div', { hidden: true });
+  const rep = tableFor(b, reportedCfg(b));
+  const c = rep ? counts(rep) : { worse: 0, better: 0, as_expected: 0 };
+  const stab = b.stability || {}, nAlt = stab.n_alternatives || 0;
+  const tile = (v, k, cls) => el('div', { class: 'tile ' + (cls || '') }, [el('div', { class: 'v num', text: v }), el('div', { class: 'k', text: k })]);
+  return el('div', { class: 'card strip', id: 'results-strip' }, [
+    el('div', { class: 'tiles' }, [
+      tile(c.worse, 'flagged worse than expected', 'worse'), tile(c.better, 'flagged better than expected', 'better'), tile(c.as_expected, 'as expected', 'expected'),
+      tile(nAlt ? `${(stab.worse || {}).stable ? stab.worse.stable.length : 0} / ${c.worse}` : '—', `worse flags that hold under all ${nAlt} alternatives`),
+    ]),
+    el('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px' }, [
+      el('span', { class: 'note' }, ['Reported test: ', el('b', { text: words(rec.test || '') }), ` under the ${rec.reference || ''} null.`]),
+      el('button', { class: 'btn small', text: 'Flag explorer', onclick: () => showTab('explorer') }),
+      el('button', { class: 'btn small', text: 'Report', onclick: () => showTab('report') }),
+    ]),
+  ]);
 }
 function scriptMessages(b) {
   const lines = String((b.scenario || {}).script || '').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
@@ -753,7 +779,7 @@ function renderAudit() {
 }
 
 // ------------------------------------------------------------------ live mode (server.py on the same origin)
-const live = { api: null, sid: null, timer: null, lastLog: 0 };
+const live = { api: null, sid: null, timer: null, lastLog: 0, lastStatus: '' };
 async function detectLive() {
   try {
     const r = await fetch('api/datasets', { cache: 'no-store' });
@@ -768,15 +794,36 @@ async function detectLive() {
 function liveForm() {
   const main = $('#main');
   main.innerHTML = '';
-  const sel = el('select', { id: 'live-dataset' }, (live.api.datasets || []).map(d => el('option', { value: d.name, text: d.name })));
+  const sel = el('select', { id: 'live-dataset' }, [el('option', { value: '', text: '— none —' })].concat((live.api.datasets || []).map(d => el('option', { value: d.name, text: d.name }))));
   const file = el('input', { type: 'file', id: 'live-file', accept: '.csv,.parquet', class: 'input' });
-  const card = el('div', { class: 'card' }, [
-    el('h2', { text: 'A new live analysis' }),
-    el('p', { class: 'sub', text: 'the agent profiles the file, asks what the data cannot settle, and runs the analysis with the model as planner; every step is shown as it happens' }),
-    el('div', { class: 'controls' }, [el('label', {}, ['example data set', sel]), el('label', {}, ['or upload a measure file', file]),
-      el('button', { class: 'btn primary', type: 'button', text: 'Start', onclick: async () => { try { await startLive(sel.value, file.files[0]); } catch (e) { showError(e); } } })]),
-  ]);
-  main.append(card);
+  const picked = el('div', { class: 'note', id: 'live-picked' });
+  file.addEventListener('change', () => { picked.textContent = file.files[0] ? `${file.files[0].name} · ${fmt(file.files[0].size / 1024, 0)} KB` : ''; });
+  const start = el('button', { class: 'btn primary', type: 'button', id: 'live-start', text: 'Start the analysis', onclick: async () => {
+    if (!file.files[0] && !sel.value) { picked.textContent = 'Choose a file or an example data set first.'; return; }
+    start.disabled = true; start.textContent = 'Reading the file…';
+    try { await startLive(sel.value, file.files[0]); } catch (e) { showError(e); }
+  } });
+  const step = (n, t) => el('div', { class: 'step' }, [el('b', { text: n }), el('span', { text: t })]);
+  main.append(el('div', { class: 'hero' }, [
+    el('div', { class: 'card' }, [
+      el('div', { class: 'eyebrow', text: 'a new live analysis' }),
+      el('h1', { text: 'Profile the providers in your measure file' }),
+      el('p', { class: 'lede', text: 'One row per observation (a patient-month, a discharge, …), a provider column, a patient column and the risk factors. The agent reads the file, asks only what the data cannot settle, plans the analysis with the local language model and reports which providers differ from what their patients would predict.' }),
+      el('div', { class: 'controls', style: 'margin-top:14px' }, [el('label', {}, ['your measure file (.csv)', file]), el('label', {}, ['or an example data set', sel]), start]),
+      picked,
+      el('p', { class: 'note', style: 'margin-top:10px', text: 'The file stays on this machine: the model runs locally and no row leaves it.' }),
+    ]),
+    el('div', { class: 'card' }, [
+      el('div', { class: 'eyebrow', text: 'what happens next' }),
+      el('div', { class: 'steps', style: 'margin-top:8px' }, [
+        step('1', 'Describe the measure in a sentence: the outcome, what one row is, which direction is worse, the risk factors.'),
+        step('2', 'The harness checks the file and derives which tests the data admit, by rule.'),
+        step('3', 'The model plans the analysis step by step; every step is verified before it runs.'),
+        step('4', 'Flags per provider, with the flags under every other admissible choice and the figures.'),
+        step('5', 'Ask about a provider, a choice, or a figure; every number comes from the engine.'),
+      ]),
+    ]),
+  ]));
 }
 async function startLive(dataset, upload) {
   let r;
@@ -799,22 +846,23 @@ async function refreshLive() {
   state.rendered = {};
 }
 function composer() {
-  const ta = el('textarea', { id: 'composer', class: 'input', rows: 3, placeholder: 'Declare the measure in a sentence, answer by number, or ask about the result…', style: 'width:100%;resize:vertical' });
-  const status = el('div', { class: 'note', id: 'live-status' });
-  const logbox = el('pre', { class: 'mono', id: 'live-log', style: 'white-space:pre-wrap;font-size:.75rem;max-height:160px;overflow:auto;margin:0;color:var(--muted)' });
-  const send = el('button', { class: 'btn primary', type: 'button', text: 'Send', onclick: async () => {
+  const ta = el('textarea', { id: 'composer', class: 'input', rows: 3, placeholder: 'Describe the measure in a sentence, answer by number, or ask about the result…', style: 'width:100%;resize:vertical' });
+  const status = el('div', { class: 'note status', id: 'live-status', text: live.lastStatus });
+  const logbox = el('ol', { class: 'progress', id: 'live-log' });
+  const send = el('button', { class: 'btn primary', type: 'button', id: 'live-send', text: 'Send', onclick: async () => {
     const text = ta.value.trim(); if (!text) return;
-    ta.value = ''; send.disabled = true;
+    ta.value = ''; send.disabled = true; status.textContent = 'sending…'; status.classList.add('busy'); logbox.innerHTML = '';
     const chat = $('.chat'); chat.append(messageNode({ role: 'analyst', text, figures: [] }));
     const typing = el('div', { class: 'msg agent' }, [el('div', { class: 'who', text: 'pprof agent' }), el('div', { class: 'bubble' }, [el('span', { class: 'typing' }, [el('i'), el('i'), el('i')])])]);
-    chat.append(typing);
+    chat.append(typing); typing.scrollIntoView({ block: 'nearest' });
     try {
       const r = await fetch(`api/sessions/${live.sid}/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
       if (!r.ok) throw new Error(await r.text());
       pollLive(typing, send, status, logbox);
-    } catch (e) { typing.remove(); status.textContent = e.message; send.disabled = false; }
+    } catch (e) { typing.remove(); status.textContent = e.message; status.classList.remove('busy'); send.disabled = false; }
   } });
-  const card = el('div', { class: 'card' }, [el('div', { style: 'display:grid;gap:8px' }, [ta, el('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' }, [send, status]), logbox])]);
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send.click(); });
+  const card = el('div', { class: 'card composer' }, [el('div', { style: 'display:grid;gap:8px' }, [ta, el('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' }, [send, status]), logbox])]);
   if (live.api && live.api.datasets) {
     const d = live.api.datasets.find(x => x.name === (state.bundle.dataset || {}).name);
     if (d && d.scenarios && d.scenarios.demo) {
@@ -831,11 +879,19 @@ function pollLive(typing, send, status, logbox) {
       const r = await fetch(`api/sessions/${live.sid}`, { cache: 'no-store' });
       const st = await r.json();
       const log = st.log || [];
-      if (log.length > live.lastLog) { logbox.textContent = log.slice(-12).join('\n'); live.lastLog = log.length; logbox.scrollTop = logbox.scrollHeight; }
-      status.textContent = st.busy ? `working… ${st.results} results, ${st.model_calls} model calls, ${st.elapsed} s` : (st.error ? `error: ${st.error}` : 'ready');
-      if (st.busy) { live.timer = setTimeout(tick, 2000); return; }
+      if (log.length > live.lastLog) {
+        logbox.innerHTML = '';
+        const shown = log.slice(-8);
+        shown.forEach((l, i) => logbox.append(el('li', { class: i === shown.length - 1 && st.busy ? 'now' : 'done', text: l.replace(/^\d\d:\d\d:\d\d /, '').replace(/\(\d+(\.\d+)?s\)/, '').trim() })));
+        live.lastLog = log.length;
+      }
+      live.lastStatus = st.busy ? `working… ${st.results} engine steps, ${st.model_calls} model calls, ${st.elapsed} s` : (st.error ? `error: ${st.error}` : 'ready');
+      status.textContent = live.lastStatus;
+      status.classList.toggle('busy', !!st.busy);
+      if (st.busy) { live.timer = setTimeout(tick, 1500); return; }
       await refreshLive();
       showTab(state.tab, true);
+      const last = $$('.chat .msg').pop(); if (last) last.scrollIntoView({ block: 'end', behavior: 'smooth' });
     } catch (e) { status.textContent = e.message; if (typing) typing.remove(); send.disabled = false; }
   };
   tick();

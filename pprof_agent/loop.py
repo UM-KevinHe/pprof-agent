@@ -103,12 +103,15 @@ def recommend(session: Any) -> Dict[str, Any]:
 
 
 def calibrated_test(session: Any, rates: List[Dict[str, Any]], reference: str) -> Optional[Any]:
-    """Among the admissible-as-reported tests, the one whose simulated type I error in the consequential
-    tail is nearest the nominal one-sided level under the reported reference (evidence decides)."""
+    """Among the admissible-as-reported tests, the one the calibration evidence picks under the reported reference.
+    With simulated power (planted departures), the Neyman-Pearson score of rules.np_score over both tails; without,
+    the test whose simulated type I error in the consequential tail is nearest the nominal one-sided level."""
     adm = session.admissible
     spec = session.spec
     tail_raw = ("higher" if spec.event_direction == "higher_is_worse" else "lower") if spec.consequential_tail != "better" \
         else ("lower" if spec.event_direction == "higher_is_worse" else "higher")
+    if any(r.get("power_pct") is not None and r.get("power_pct") == r.get("power_pct") for r in rates):
+        return _np_test(session, rates, reference, tail_raw)
     rows = [r for r in rates if r.get("reference") == reference and r.get("tail") == tail_raw
             and r.get("test") in adm.tests_reported]
     if not rows:
@@ -136,6 +139,43 @@ def calibrated_test(session: Any, rates: List[Dict[str, Any]], reference: str) -
         why += f"; the rule default {default['test']} was at {float(default['rate_pct']):.1f}%"
     why += ", so the calibrated test is reported" if cal else ", the nearest of the admissible tests (none within simulation error)"
     return best["test"], why
+
+
+def np_scores(session: Any, rates: List[Dict[str, Any]], reference: str, tail_raw: str) -> Dict[str, float]:
+    """Each reportable test's Neyman-Pearson score under the reference, weighting the consequential tail."""
+    adm = session.admissible
+    other = "lower" if tail_raw == "higher" else "higher"
+    by = {(r.get("test"), r.get("tail")): r for r in rates if r.get("reference") == reference}
+    w = rules.CALIBRATION["w_consequential"]
+    def tail_score(r):
+        return rules.np_score(float(r["rate_pct"]), r.get("power_pct"), float(r["nominal_pct"]))
+    return {t: w * tail_score(by[(t, tail_raw)]) + (1 - w) * tail_score(by[(t, other)])
+            for t in adm.tests_reported if (t, tail_raw) in by and (t, other) in by}
+
+
+def _np_test(session: Any, rates: List[Dict[str, Any]], reference: str, tail_raw: str) -> Optional[Any]:
+    """The reportable test with the best Neyman-Pearson score (ties keep the rule default), with the evidence in words."""
+    adm, spec = session.admissible, session.spec
+    scores = np_scores(session, rates, reference, tail_raw)
+    default = adm.default_test
+    if default not in scores:
+        return None               # the rule default was not simulated: no evidence against it, it stands
+    best = max(scores, key=lambda t: (scores[t], t == default))
+    row = {r.get("test"): r for r in rates if r.get("reference") == reference and r.get("tail") == tail_raw}
+    def pct(v):
+        return 0.0 if v is None or v != v else float(v)
+    b, d = row[best], row[default]
+    n_tests = len({r["test"] for r in rates})
+    why = (f"the calibration simulation ({n_tests} tests, departures of odds ratio {float(b.get('effect_or') or 0):.2f} planted in some "
+           f"providers) scored each reportable test by its power, less a penalty for type I error beyond the nominal level by more "
+           f"than a tenth: {best} had type I error {pct(b['rate_pct']):.1f}% and power {pct(b.get('power_pct')):.1f}% in the "
+           f"{spec.consequential_tail} tail against a nominal {float(b['nominal_pct']):.1f}% under the {reference} null")
+    if best == default:
+        why += ", and it is the rule default; it stands"
+    else:
+        why += (f"; the rule default {default} had type I error {pct(d['rate_pct']):.1f}% and power {pct(d.get('power_pct')):.1f}%, "
+                "so the calibrated test is reported")
+    return best, why
 
 
 def run_loop(session: Any, planner: Optional[Planner] = None, max_steps: int = MAX_STEPS,

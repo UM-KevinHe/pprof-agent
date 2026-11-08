@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 gr = pytest.importorskip("gradio")
+if not (Path(__file__).resolve().parents[1] / "app.py").exists():
+    pytest.skip("app.py (the Gradio UI) is archived; the web app in site/ replaced it", allow_module_level=True)
 DATA = os.environ.get("PPROF_AGENT_DATA")
 pytestmark = pytest.mark.skipif(not DATA, reason="PPROF_AGENT_DATA not set")
 

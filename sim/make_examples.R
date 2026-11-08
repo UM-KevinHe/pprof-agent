@@ -20,7 +20,7 @@
 
 simulate_measure <- function(kind = c("patient_month", "discharge", "binomial_days", "demo"), n_prov = 300, seed = 2026,
                              target_rate = 0.63, sigma_patient = 1.0, months = 12, state = NULL,
-                             year = 2025, year2_changes = FALSE, median_patients = 25) {
+                             year = 2025, year2_changes = FALSE, median_patients = 25, shift = NULL, min_planted = 12L) {
   kind <- match.arg(kind)
   set.seed(seed)
   bad_sign <- if (kind == "patient_month") -1 else 1   # the direction of a WORSE facility on the logit scale
@@ -38,7 +38,7 @@ simulate_measure <- function(kind = c("patient_month", "discharge", "binomial_da
     # are very conservative for binomial trials (type I error far below nominal in the calibration)
     invariant <- if (kind == "binomial_days") integer(0) else sort(sample(small_pool, 2))
     # planted facilities are drawn from those a published eligibility threshold (11 patients) would test
-    ordinary <- setdiff(which(n_pat >= 12), c(tiny, invariant))
+    ordinary <- setdiff(which(n_pat >= min_planted), c(tiny, invariant))
     # ordinary facilities: a small constant spread of effects
     sd_gamma <- rep(0.10, n_prov)
     gamma <- rnorm(n_prov, 0, sd_gamma)
@@ -48,9 +48,10 @@ simulate_measure <- function(kind = c("patient_month", "discharge", "binomial_da
     rest <- setdiff(ordinary, worse)
     tert_rest <- tert[match(rest, ordinary)]
     better <- c(sample(rest[tert_rest == "large"], 1), sample(rest[tert_rest == "medium"], 2), sample(rest[tert_rest == "small"], 1))
-    shift_of <- if (kind == "demo") c(large = 1.0, medium = 1.3, small = 1.7) else c(large = 0.8, medium = 1.0, small = 1.4)
+    shift_of <- if (!is.null(shift)) shift else if (kind == "demo") c(large = 1.0, medium = 1.3, small = 1.7) else c(large = 0.8, medium = 1.0, small = 1.4)
     size_class <- as.character(tert[match(seq_len(n_prov), ordinary)])
-    size_class[is.na(size_class)] <- ifelse(seq_len(n_prov) %in% tiny, "tiny", "below_threshold")
+    rest_idx <- which(is.na(size_class))
+    size_class[rest_idx] <- ifelse(rest_idx %in% tiny, "tiny", "below_threshold")
     # the planted effects are set outright (not added to a random draw), so each is a known departure
     gamma[worse] <- bad_sign * shift_of[size_class[worse]]
     gamma[better] <- -bad_sign * shift_of[size_class[better]]
@@ -256,5 +257,14 @@ if (sys.nframe() == 0L) {
   }
   if (which %in% c("all", "srr")) write_example(simulate_measure("discharge", n_prov = 250, seed = seed + 2, target_rate = 0.26, year = 2025, median_patients = 40), file.path(out, "srr_2025"))
   if (which %in% c("all", "aoh")) write_example(simulate_measure("binomial_days", n_prov = 250, seed = seed + 3, target_rate = 0.04, year = 2025), file.path(out, "aoh_2025"))
-  if (which == "demo") write_example(simulate_measure("demo", n_prov = 200, seed = seed + 4, target_rate = 0.15, year = 2025, median_patients = 25), file.path(out, "demo"))
+  if (which == "demo") {
+    # the demo set takes its own knobs: n_prov=, median_patients=, sigma_patient=, target_rate=, min_planted=,
+    # shift_large= shift_medium= shift_small= (the planted effects on the logit scale)
+    num <- function(key, default) if (is.null(kv[[key]])) default else as.numeric(kv[[key]])
+    shift <- c(large = num("shift_large", 1.0), medium = num("shift_medium", 1.3), small = num("shift_small", 1.7))
+    write_example(simulate_measure("demo", n_prov = as.integer(num("n_prov", 200)), seed = seed + 4, target_rate = num("target_rate", 0.15),
+                                   sigma_patient = num("sigma_patient", 1.0), year = 2025, median_patients = num("median_patients", 25),
+                                   shift = shift, min_planted = as.integer(num("min_planted", 12))),
+                  file.path(out, "demo"))
+  }
 }

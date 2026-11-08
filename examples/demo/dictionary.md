@@ -24,9 +24,9 @@ One row is one patient-month. Rows are attributed to the dialysis facility (`FAC
 
 ## What is planted (from `truth.json`)
 
-- Facilities truly worse than the norm: F00075, F00166, F00098, F00102, F00110, F00063 (two per size tertile; effects {'large': 1, 'medium': 1.3, 'small': 1.7} on the logit scale, larger where the facility is smaller).
-- Facilities truly better: F00127, F00085, F00150, F00140.
+- Facilities truly worse than the norm: F00087, F00131, F00124, F00143, F00067, F00164 (two per size tertile; effects {'large': 1.1, 'medium': 1.4, 'small': 1.8} on the logit scale, larger where the facility is smaller).
+- Facilities truly better: F00109, F00186, F00195, F00006.
 - Facilities whose outcomes are all zero (invariant): F00032, F00096.
 - Facilities with three patients or fewer: 15.
-- A decoy with an extreme case mix and a true effect of zero: F00163.
+- A decoy with an extreme case mix and a true effect of zero: F00127.
 - A patient random effect of scale 1 (within-patient correlation); ordinary facilities have a small spread of effects (sd 0.1).

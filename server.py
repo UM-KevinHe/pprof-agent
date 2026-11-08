@@ -39,6 +39,9 @@ SESSIONS: Dict[str, "Live"] = {}
 
 
 def _client():
+    if os.environ.get("PPROF_AGENT_FAKE"):          # the deterministic fake model of the tests: the whole flow without a GPU
+        from pprof_agent.fake import FakeClient
+        return FakeClient(), "fake"
     if not ENDPOINT or not MODEL:
         return None, None
     from openai import OpenAI
@@ -110,7 +113,7 @@ def datasets() -> Dict[str, Any]:
             spec = (d / "specification.json").read_text(encoding="utf-8") if (d / "specification.json").exists() else None
             out.append({"name": d.name, "data_file": "data.csv", "scenarios": scen, "published_specification": spec,
                         "dictionary": (d / "dictionary.md").read_text(encoding="utf-8") if (d / "dictionary.md").exists() else None})
-    return {"datasets": out, "model": MODEL if ENDPOINT else None, "mode": "live"}
+    return {"datasets": out, "model": "fake" if os.environ.get("PPROF_AGENT_FAKE") else (MODEL if ENDPOINT else None), "mode": "live"}
 
 
 @app.post("/api/sessions")

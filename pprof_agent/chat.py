@@ -194,10 +194,42 @@ class Agent:
         from . import compare
         df = compare.table_of(s, rec["test"], rec["reference"])
         c = compare.counts(df)
-        lines = [f"Done. Reported test: {rec['test']} ({rec['statistic']} statistic, {rec['variance']} variance) under the {rec['reference']} null.",
-                 f"Flagged: {c['worse']} worse than expected, {c['better']} better, {c['as_expected']} as expected.",
-                 f"Report: {self.report_paths.get('html') or self.report_paths['report']}"]
+        card = s.card or {}
+        lines = [f"Done. {card.get('eligible_providers')} of {card.get('providers')} providers ({s.spec.provider}) profiled on "
+                 f"{card.get('rows_complete')} rows with a fixed-effects logistic model adjusted for {len(s.spec.adjusters or [])} risk factors.",
+                 f"Reported test: {rec['test']} ({rec['statistic']} statistic, {rec['variance']} variance) under the {rec['reference']} null.",
+                 f"Flagged: {c['worse']} worse than expected, {c['better']} better, {c['as_expected']} as expected."]
+        summary = self._prose_summary()
+        if summary:
+            lines += ["", summary]
+        figs = self._figure_lines()
+        if figs:
+            lines += [""] + figs
+        lines += ["", f"Report: {self.report_paths.get('html') or self.report_paths['report']}"]
         return "\n".join(lines)
+
+    def _prose_summary(self) -> str:
+        """The model's paragraphs on the flags and on the alternatives, every reference filled in by the harness
+        (the same text the report carries), so the reply reads as an answer and not as a status line."""
+        s = self.session
+        if not s.prose:
+            return ""
+        refs = report.build_references(s)
+        out = []
+        for key in ("flags", "alternatives"):
+            text = s.prose.get(key)
+            if not text:
+                continue
+            try:
+                out.append(report.resolve(text, refs))
+            except KeyError:
+                continue
+        return "\n\n".join(out)
+
+    def _figure_lines(self) -> List[str]:
+        """The figures rendered so far, one line each with the file path (the web app shows them inline)."""
+        return [f"{r.args.get('display')} of {r.args.get('of')}: {r.summary['path']}"
+                for r in self.session.results if r.action == "figure" and (r.summary or {}).get("path")]
 
     # ------------------------------------------------------------------ figures, explanation, wording
     def _render_figures(self) -> None:
@@ -435,7 +467,12 @@ class Agent:
                                 + ", ".join(fragile[:10]) + (" and others" if len(fragile) > 10 else "") if fragile else ""))
                 ids += fragile[:10]
         refs = report.build_references(s)
-        if refs.get("calibration_rate_pct") is not None:
+        if refs.get("calibration_power_pct") is not None:
+            facts.append(f"the calibration simulation ([calibration_n_sim] data sets, departures of odds ratio [calibration_effect_or] planted in a "
+                         f"small share of the providers) put the reported test's type I error in the {s.spec.consequential_tail} tail at "
+                         f"[calibration_rate_pct] against the nominal [calibration_nominal_pct] and its power at [calibration_power_pct] "
+                         f"under the reported null")
+        elif refs.get("calibration_rate_pct") is not None:
             facts.append(f"the calibration simulation ([calibration_n_sim] data sets with no provider truly different) put the reported test's "
                          f"type I error in the {s.spec.consequential_tail} tail at [calibration_rate_pct] against the nominal "
                          f"[calibration_nominal_pct] under the reported null")
@@ -535,7 +572,8 @@ class Agent:
                     "few_patients_threshold", "en_min_providers", "stabilized_max_rows", "exact_max_trials", "en_scale_max", "en_scale_ratio",
                     "n_providers_excluded", "n_adjusters", "calibration_rate_pct", "calibration_nominal_pct", "calibration_n_sim",
                     "worse_under_every_alternative", "better_under_every_alternative", "n_alternatives",
-                    "en_location_max", "en_scale_threshold", "en_location_threshold", "calibration_default_rate_pct")
+                    "en_location_max", "en_scale_threshold", "en_location_threshold", "calibration_default_rate_pct",
+                    "calibration_power_pct", "calibration_default_power_pct", "calibration_effect_or")
     _SMALL = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
     def _words(self, text: str, refs: Optional[Dict[str, Any]] = None) -> str:
@@ -563,7 +601,12 @@ class Agent:
                 for t in adm.tests_computed:
                     if t == rec.get("test"):
                         continue
-                    if t == adm.default_test and refs.get("calibration_default_rate_pct") is not None:
+                    if t == adm.default_test and refs.get("calibration_default_power_pct") is not None:
+                        facts.append(f"why not {t}: it is the rule default, but the calibration simulation scored the reported test higher: "
+                                     f"in the {spec.consequential_tail} tail the default had type I error [calibration_default_rate_pct] and "
+                                     f"power [calibration_default_power_pct], the reported test [calibration_rate_pct] and [calibration_power_pct], "
+                                     f"against the nominal [calibration_nominal_pct] under the {rec.get('reference')} null")
+                    elif t == adm.default_test and refs.get("calibration_default_rate_pct") is not None:
                         facts.append(f"why not {t}: it is the rule default, but the calibration simulation put its type I error in the "
                                      f"{spec.consequential_tail} tail at [calibration_default_rate_pct] against the nominal [calibration_nominal_pct] "
                                      f"under the {rec.get('reference')} null, and the reported test's [calibration_rate_pct] came nearer")

@@ -118,6 +118,77 @@ def test_calibrated_test_needs_the_default_simulated():
     assert pick is not None and pick[0] == other, pick
 
 
+def np_rows(by_test, reference="theoretical"):
+    """Calibration rows with power: {test: (size, power) in the consequential (lower) tail, (size, power) in the other}."""
+    rows = []
+    for t, ((sc, pc), (so, po)) in by_test.items():
+        for tail, size, power in (("lower", sc, pc), ("higher", so, po)):
+            rows.append({"test": t, "reference": reference, "tail": tail, "rate_pct": size, "se_pct": 0.2, "nominal_pct": 2.5,
+                         "n_sim": 100, "power_pct": power, "power_se_pct": 1.0, "effect_or": 1.5})
+    return rows
+
+
+def test_np_score_holds_size_then_takes_power():
+    assert rules.np_score(2.51, 70, 2.5) == 0.7                       # just above nominal, inside the tolerance: not penalized
+    assert rules.np_score(2.75, 70, 2.5) == 0.7
+    assert abs(rules.np_score(3.0, 70, 2.5) - 0.5) < 1e-9             # 0.25 beyond the tolerance, a tenth of nominal x lam 2
+    assert rules.np_score(20.0, 90, 2.5) == rules.CALIBRATION["floor"]
+    assert rules.np_score(1.0, None, 2.5) == 0.0 and rules.np_score(1.0, float("nan"), 2.5) == 0.0
+
+
+def test_calibrated_test_by_neyman_pearson():
+    from pprof_agent import loop
+    s = session()
+    default = s.admissible.default_test
+    other = next(t for t in s.admissible.tests_reported if t != default)
+    # an alternative at 2.51% type I error with more power is reported: 2.51% is within the tolerance
+    pick = loop.calibrated_test(s, np_rows({default: ((2.0, 60), (2.0, 60)), other: ((2.51, 70), (2.51, 70))}), "theoretical")
+    assert pick is not None and pick[0] == other and "rule default " + default in pick[1] and "power" in pick[1], pick
+    # more power bought with type I error well beyond the tolerance in the consequential tail does not win
+    pick = loop.calibrated_test(s, np_rows({default: ((2.0, 60), (2.0, 60)), other: ((4.0, 90), (2.4, 70))}), "theoretical")
+    assert pick[0] == default and pick[1].endswith("it stands"), pick
+    # the consequential tail weighs more: the same scores in swapped tails are not a tie
+    scores = loop.np_scores(s, np_rows({default: ((2.0, 80), (2.0, 20)), other: ((2.0, 50), (2.0, 70))}), "theoretical", "lower")
+    assert scores[default] > scores[other], scores
+    # ties keep the rule default; the default not simulated: it stands (None)
+    pick = loop.calibrated_test(s, np_rows({default: ((2.0, 60), (2.0, 60)), other: ((2.0, 60), (2.0, 60))}), "theoretical")
+    assert pick[0] == default
+    assert loop.calibrated_test(s, np_rows({other: ((2.0, 60), (2.0, 60))}), "theoretical") is None
+    # without power (a size-only simulation, power arriving as null) the old rule applies
+    rows = [dict(r, power_pct=None) for r in np_rows({default: ((1.0, 0), (1.0, 0)), other: ((2.6, 0), (2.6, 0))})]
+    pick = loop.calibrated_test(s, rows, "theoretical")
+    assert pick[0] == other and "nominal" in pick[1] and "power" not in pick[1], pick
+
+
+def test_calibration_payload_carries_the_planted_effect():
+    from pprof_agent.engine import executor
+    s = session()
+    done(s, "fit", {"adjusters": None})
+    p = executor.build_payload(s, "calibrate_tests", {"n_sim": 30})
+    assert p["effect_or"] == rules.CALIBRATION["effect_or"] and p["planted_frac"] == rules.CALIBRATION["planted_frac"]
+    assert executor.build_payload(s, "calibrate_tests", {"n_sim": 30, "effect_or": None})["effect_or"] is None   # size only
+    p = executor.build_payload(s, "calibrate_tests", {"n_sim": 30, "effect_or": 2, "planted_frac": 0.1})
+    assert p["effect_or"] == 2.0 and p["planted_frac"] == 0.1
+    assert actions.validate("calibrate_tests", {"effect_or": 1.5, "planted_frac": 0.05}, s) == []
+    assert any("between 1.1 and 4.0" in x for x in actions.validate("calibrate_tests", {"effect_or": 5}, s))
+    assert any("must be a number" in x for x in actions.validate("calibrate_tests", {"effect_or": "large"}, s))
+    assert "effect_or: number between 1.1 and 4.0" in "\n".join(actions.card_lines(s))
+
+
+def test_calibration_cost_is_estimated_from_the_fit():
+    s = session()
+    assert actions.calibration_seconds(s, 30) is None
+    s.add(Result(id="fit", action="fit", args={"adjusters": None}, summary={"fit_seconds": 10, "n_providers_fitted": 1000},
+                 tables={}, step=1, source="core"))
+    n_tests = len(s.admissible.tests_computed)
+    assert abs(actions.calibration_seconds(s, 30) - 30 * 0.5 * (10 + n_tests * 5)) < 1e-9     # 500 of 1000 providers
+    s.add(Result(id="test:robust_score", action="test_providers", args={"test": "robust_score"}, summary={"seconds": 1},
+                 tables={}, step=2, source="core"))
+    assert actions.calibration_seconds(s, 30) < 30 * 0.5 * (10 + n_tests * 5)
+    line = next(l for l in actions.available_lines(s) if l.startswith("calibrate_tests"))
+    assert line.endswith("min)"), line
+
+
 def test_available_lines_list_only_what_the_harness_accepts():
     s = session()
     lines = actions.available_lines(s)
@@ -126,7 +197,7 @@ def test_available_lines_list_only_what_the_harness_accepts():
     lines = actions.available_lines(s)
     assert "fit" not in lines and "standardize stdz=both norm=median" in lines
     assert "test_providers test=robust_score" in lines and "evaluate_model" in lines
-    assert "calibrate_tests n_sim=30" in lines and any(l.startswith("subset provider=") for l in lines)
+    assert any(l.startswith("calibrate_tests n_sim=30 (") for l in lines) and any(l.startswith("subset provider=") for l in lines)
     assert not any(l.startswith("test_measure") for l in lines)     # needs sm
     assert not any(l.startswith("empirical_null") for l in lines)   # needs its test
     done(s, "test_providers", {"test": "robust_score"})

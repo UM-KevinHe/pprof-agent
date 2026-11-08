@@ -17,6 +17,14 @@ CARD = {"invariant_providers": {"total": 0}, "repeats": True, "has_patient": Tru
         "rows_complete": 1000, "patients": 300, "providers": 200, "event_rate": 0.3, "eligibility": 2}
 
 
+def test_mentions_does_not_depend_on_set_order():
+    from pprof_agent import textmatch
+    for cols in (["PID", "AGE"], ["AGE", "PID"]):
+        assert textmatch.names_mentioned("Patient column pid", cols + ["pid"]) == ["pid"]
+        assert textmatch.mentions("Patient column pid", "pid", cols)
+        assert textmatch.mentions("Patient column pid", "PID", cols)
+
+
 def test_policies_have_five_headings():
     for n in policy.NAMES:
         secs = policy.sections(n)

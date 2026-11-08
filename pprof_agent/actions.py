@@ -69,9 +69,11 @@ CARDS: Dict[str, Card] = {
         {"display": {"enum": list(DISPLAYS)}, "of": {"type": "result_id"}},
         cost=0, needs=(), produces="figure"),
     "calibrate_tests": Card(
-        "calibrate_tests", "simulate this design with no provider truly different (outcomes drawn from the fitted risk model at the norm, with the within-patient correlation matched) and measure each admissible test's type I error per tail against the nominal level, under both reference distributions",
+        "calibrate_tests", "simulate this design (outcomes drawn from the fitted risk model at the norm, with the within-patient correlation matched), with departures of a given odds ratio planted in a small share of the providers, and measure each admissible test's type I error per tail on the providers at the norm and its power on the planted ones, under both reference distributions; the reported test is then the one with the most power whose type I error stays near the nominal level",
         {"tests": {"type": "tests", "doc": "tests to calibrate beyond the reportable ones (always included); null for all computed"},
-         "n_sim": {"type": "int", "min": 20, "max": 500}, "max_providers": {"type": "int", "min": 50, "max": 5000}},
+         "n_sim": {"type": "int", "min": 20, "max": 500}, "max_providers": {"type": "int", "min": 50, "max": 5000},
+         "effect_or": {"type": "float", "min": 1.1, "max": 4.0, "doc": "the planted departure as an odds ratio (default 1.5)"},
+         "planted_frac": {"type": "float", "min": 0.02, "max": 0.2, "doc": "the share of providers planted (default 0.05)"}},
         cost=10, needs=("fit",), produces="calibration"),
     "subset": Card(
         "subset", "one provider's observed and expected events by patient group, and its case mix against the population (why is this provider flagged?)",
@@ -146,6 +148,14 @@ def validate(name: str, args: Optional[Dict[str, Any]], session: Any, budget: bo
                 problems.append(f"{name}.{k} must be an integer")
                 continue
             if iv < rule.get("min", -10**9) or iv > rule.get("max", 10**9):
+                problems.append(f"{name}.{k} must be between {rule.get('min')} and {rule.get('max')}")
+        if rule.get("type") == "float":
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                problems.append(f"{name}.{k} must be a number")
+                continue
+            if not (rule.get("min", -1e18) <= fv <= rule.get("max", 1e18)):
                 problems.append(f"{name}.{k} must be between {rule.get('min')} and {rule.get('max')}")
         if rule.get("type") == "columns":
             cols = [c["name"] for c in (getattr(session, "profile", None) or {}).get("columns", [])]
@@ -284,6 +294,8 @@ def card_lines(session: Any) -> List[str]:
                 args.append(f"{k} in {{{', '.join(map(str, vals))}}}")
             elif rule.get("type") == "int":
                 args.append(f"{k}: integer between {rule.get('min')} and {rule.get('max')}")
+            elif rule.get("type") == "float":
+                args.append(f"{k}: number between {rule.get('min')} and {rule.get('max')}")
             elif rule.get("type") == "result_id":
                 args.append(f"{k}: the id of a result in the ledger")
             elif rule.get("type") == "provider_id":
@@ -293,6 +305,26 @@ def card_lines(session: Any) -> List[str]:
         lines.append(f"- {c.name} (cost {c.cost}): {c.purpose}" + (f"; args: {'; '.join(args)}" if args else "")
                      + (f"; needs {', '.join(c.needs)}" if c.needs else ""))
     return lines
+
+
+def calibration_seconds(session: Any, n_sim: int, max_providers: int = 500) -> Optional[float]:
+    """A rough cost of calibrate_tests: every simulated data set is refitted and every calibrated test re-run, on
+    at most `max_providers` providers. From the measured seconds of the fit and of the tests run so far (a test not
+    yet run is taken at half a fit); None before the fit."""
+    fit = session.get("fit") if hasattr(session, "get") else None
+    if fit is None:
+        return None
+    fs = fit.summary or {}
+    fit_s = float(fs.get("fit_seconds") or fs.get("seconds") or fit.seconds or 0)
+    adm = getattr(session, "admissible", None)
+    tests = list(adm.tests_computed) if adm else []
+    per_test = []
+    for t in tests:
+        r = session.get(f"test:{t}")
+        per_test.append(float((r.summary or {}).get("seconds") or r.seconds or 0) if r is not None else fit_s / 2)
+    n_prov = int(fs.get("n_providers_fitted") or 0)
+    share = min(1.0, max_providers / n_prov) if n_prov else 1.0
+    return n_sim * share * (fit_s + sum(per_test))
 
 
 def available_lines(session: Any) -> List[str]:
@@ -318,7 +350,12 @@ def available_lines(session: Any) -> List[str]:
     out = []
     for name, args in cands:
         if not validate(name, args, session):
-            out.append(name + "".join(f" {k}={v}" for k, v in args.items() if v is not None))
+            line = name + "".join(f" {k}={v}" for k, v in args.items() if v is not None)
+            if name == "calibrate_tests":
+                est = calibration_seconds(session, int(args.get("n_sim") or 30))
+                if est is not None:
+                    line += f" (about {max(1, round(est / 60))} min)" if est >= 60 else " (under a minute)"
+            out.append(line)
     if session.has("fit"):
         out.append("subset provider=<a fitted provider id>")
     if session.results:

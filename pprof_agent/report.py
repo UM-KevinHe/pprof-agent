@@ -97,12 +97,26 @@ def build_references(session: Any) -> Dict[str, Any]:
         if row is not None:
             refs.update({"calibration_rate_pct": round(float(row["rate_pct"]), 1), "calibration_nominal_pct": float(row["nominal_pct"]),
                          "calibration_n_sim": int(row.get("n_sim") or cal.summary.get("n_sim") or 0)})
+            if _num(row.get("power_pct")) is not None:
+                refs.update({"calibration_power_pct": round(float(row["power_pct"]), 1),
+                             "calibration_effect_or": float(cal.summary.get("effect_or") or row.get("effect_or"))})
         if adm is not None and adm.default_test != t:
             drow = next((r for r in cal.summary["rates"] if r.get("test") == adm.default_test and r.get("reference") == rec.get("reference", "theoretical")
                          and r.get("tail") == tail), None)
             if drow is not None:
                 refs["calibration_default_rate_pct"] = round(float(drow["rate_pct"]), 1)
+                if _num(drow.get("power_pct")) is not None:
+                    refs["calibration_default_power_pct"] = round(float(drow["power_pct"]), 1)
     return refs
+
+
+def _num(v: Any) -> Optional[float]:
+    """A finite number, or None (a missing value arrives as None or NaN)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and f not in (float("inf"), float("-inf")) else None
 
 
 def consequential_tail_raw(spec: Any) -> str:
@@ -264,13 +278,19 @@ def render_markdown(session: Any, prose: Optional[Dict[str, str]] = None, figure
     cal = session.get("calibration")
     if cal:
         s = cal.summary
+        planted = (f" except {_fmt(s.get('n_planted_per_tail'))} providers per tail moved off it by an odds ratio of {_fmt(s.get('effect_or'))}"
+                   if s.get("power") else "")
         L.append(f"\n**Calibration by simulation**: {_fmt(s.get('n_sim'))} data sets drawn from the fitted risk model with every provider at "
-                 f"the norm ({_fmt(s.get('n_providers_used'))} providers, patient random-effect scale {_fmt(s.get('sigma_patient'))} matching a "
-                 f"within-patient residual correlation of {_fmt(s.get('rho_observed'))}); type I error per tail (%, nominal {_fmt(s.get('nominal_pct'))}):\n")
+                 f"the norm{planted} ({_fmt(s.get('n_providers_used'))} providers, patient random-effect scale {_fmt(s.get('sigma_patient'))} matching a "
+                 f"within-patient residual correlation of {_fmt(s.get('rho_observed'))}); type I error per tail (%, nominal {_fmt(s.get('nominal_pct'))}"
+                 + (", counted on the providers at the norm" if s.get("power") else "") + "):\n")
         ct = _read((cal.tables or {}).get("calibration_tests"))
         if ct is not None:
             piv = ct.pivot_table(index=["test", "reference"], columns="tail", values="rate_pct").reset_index()
             L.append(_md_table(piv))
+            if s.get("power") and "power_pct" in ct.columns and ct["power_pct"].notna().any():
+                L.append("\nPower per tail (%, the planted providers of that tail found):\n")
+                L.append(_md_table(ct.pivot_table(index=["test", "reference"], columns="tail", values="power_pct").reset_index()))
     subs = session.results_of("subset")
     if subs:
         L.append("\n**Provider breakdowns**\n")
