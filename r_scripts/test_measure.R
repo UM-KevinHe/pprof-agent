@@ -1,11 +1,11 @@
 # test_measure.R -- the measure-level test of a directly standardized rate (the transport of a
-# provider test to the standardized scale; pprofR::test_SM). payload: {run_dir, measure: direct_rate,
+# provider test to the standardized scale; pprof::test_measure). payload: {run_dir, measure: direct_rate,
 # se_source: model | robust_wald | stabilized_wald (a test table with an se column), transform:
 # identity|logit, location (0), scale (1) -- or en_key to take location/scale per provider from an
 # empirical-null group table --, level, alternative, key}
 # writes tables/measure_<key>.csv; returns counts.
 source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))), "common.R"))
-suppressPackageStartupMessages(library(pprofR))
+suppressPackageStartupMessages(library(pprof))
 run_step({
   t0 <- Sys.time()
   run_dir <- arg("run_dir"); measure <- arg("measure", "direct_rate"); se_source <- arg("se_source", "model")
@@ -15,7 +15,7 @@ run_step({
   if (!measure %in% c("direct_rate")) stop("V1 tests the direct rate only (measure = direct_rate)", call. = FALSE)
   if (!"direct_rate" %in% names(sm)) stop("run standardize with direct first", call. = FALSE)
   fit <- load_fit(run_dir)
-  N_pop <- arg("N_pop", sum(if (is.null(fit$char_list$N.char)) rep(1, length(fit$obs)) else fit$data_include[[fit$char_list$N.char]]))
+  N_pop <- as.numeric(arg("N_pop", sum(fit_N(fit))))
   se_gamma <- if (identical(se_source, "model")) {
     g <- read_table(run_dir, "gamma"); g$se_model[match(sm$provider, g$provider)]
   } else {
@@ -24,7 +24,7 @@ run_step({
     tt$se[match(sm$provider, tt$provider)]
   }
   se <- sm$direct_numer_se / N_pop * se_gamma
-  ref <- as.numeric(arg("ref", sum(fit$obs) / N_pop))
+  ref <- as.numeric(arg("ref", sum(fit_Y(fit)) / N_pop))
   location <- as.numeric(arg("location", 0)); scale <- as.numeric(arg("scale", 1))
   en_key <- arg("en_key")
   if (!is.null(en_key)) {
@@ -32,10 +32,10 @@ run_step({
     grp <- en$group[match(sm$provider, en$provider)]
     location <- gi$location[grp]; scale <- gi$scale[grp]
   }
-  r <- test_SM(sm$direct_rate, se, ref = ref, transform = transform, location = location, scale = scale,
-               level = level, alternative = alternative)
-  tab <- data.frame(provider = sm$provider, measure = sm$direct_rate, se = se, ref = ref, z = r$z, p = r$p,
-                    flag_raw = as.integer(r$flag), lower = r$lower, upper = r$upper, stringsAsFactors = FALSE)
+  r <- test_measure(estimate = sm$direct_rate, se = se, reference = ref, transform = transform,
+                    location = location, scale = scale, level = level, alternative = alternative)
+  tab <- data.frame(provider = sm$provider, measure = sm$direct_rate, se = se, ref = ref, z = as.numeric(r$z), p = as.numeric(r$p),
+                    flag_raw = as.integer(r$flag), lower = as.numeric(r$lower), upper = as.numeric(r$upper), stringsAsFactors = FALSE)
   write_table(tab, run_dir, paste0("measure_", key))
   ok <- !is.na(tab$flag_raw)
   list(measure = measure, se_source = se_source, transform = transform, ref = ref, key = key,

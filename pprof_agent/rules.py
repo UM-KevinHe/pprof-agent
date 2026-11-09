@@ -31,7 +31,7 @@ THRESHOLDS: Dict[str, float] = {
     "en_min_providers": 40,          # fewer eligible providers: no empirical null (4 groups of 10)
     "en_scale_max": 1.25,            # the empirical null is reported when a size group's scale exceeds this
     "en_location_max": 0.5,          # ... or a group's location moves this far from zero
-    "stabilized_max_rows": 5000,     # pprofR pools a matrix over a patient's rows; larger patients refuse
+    "stabilized_max_rows": 5000,     # pprof pools a matrix over a patient's rows; larger patients refuse
     "exact_max_trials": 20000,       # the exact test enumerates trials; above this the score test is the default
 }
 

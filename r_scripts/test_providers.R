@@ -1,9 +1,9 @@
-# test_providers.R -- one provider-effect test for every fitted provider (pprofR::test_fe).
+# test_providers.R -- one provider-effect test for every fitted provider (pprof::test).
 # payload: {run_dir, test: exact|score|wald|robust_wald|robust_score|stabilized_wald|stabilized_score,
 #           null: "median" | <number>, alternative: two.sided|greater|less, level (0.95), key}
 # writes tables/test_<key>.csv; returns counts.
 #
-# flag_raw follows pprofR: 1 = significantly HIGHER than the null, -1 = lower, 0 = as expected. The
+# flag_raw follows pprof: 1 = significantly HIGHER than the null, -1 = lower, 0 = as expected. The
 # harness maps higher/lower to worse/better with the declared event direction.
 #
 # The table also carries what a display needs (pprof_py's ProviderProfile roles): the observed and
@@ -15,42 +15,36 @@
 # For the exact test the funnel uses the normal approximation with the null variance (approximate;
 # the flags themselves are exact) and this is recorded in `limit_rule`.
 source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))), "common.R"))
-suppressPackageStartupMessages(library(pprofR))
-TEST_MAP <- c(exact = "exact.poisbinom", exact_bootstrap = "exact.bootstrap", score = "score", wald = "wald",
-              robust_wald = "robust_wald", robust_score = "robust_score",
-              stabilized_wald = "stabilized_wald", stabilized_score = "stabilized_score")
+suppressPackageStartupMessages(library(pprof))
 WALD_TYPE <- c("wald", "robust_wald", "stabilized_wald")
 run_step({
   t0 <- Sys.time()
   run_dir <- arg("run_dir")
   test <- arg("test")
-  if (!test %in% names(TEST_MAP)) stop("unknown test: ", test, call. = FALSE)
+  if (!test %in% names(TEST_ARGS)) stop("unknown test: ", test, call. = FALSE)
   null <- arg("null", "median")
   if (!identical(null, "median")) null <- as.numeric(null)
   alternative <- arg("alternative", "two.sided")
   level <- as.numeric(arg("level", 0.95))
   key <- arg("key", test)
   fit <- load_fit(run_dir)
-  cl <- fit$char_list
-  lev <- rownames(fit$gamma)
-  gam <- as.numeric(fit$gamma[, 1])
+  lev <- fit_levels(fit)
+  gam <- fit_gamma(fit)
   null_value <- if (identical(null, "median")) stats::median(gam) else null
-  r <- test_fe(if (test == "wald") wald_fit(fit) else fit, test = TEST_MAP[[test]], null = null, alternative = alternative, level = level,
-               threads = threads(), n = as.integer(arg("n_resample", 10000)))
-  i <- match(lev, rownames(r))
+  r <- run_test(fit, test, null = null, level = level, alternative = alternative, n_resample = as.integer(arg("n_resample", 10000)))
+  i <- match(lev, r$provider)
   sizes <- provider_sizes(fit)
-  d <- fit$data_include
-  prov <- factor(pid(d[[cl$prov.char]]), levels = lev)
-  N <- if (is.null(cl$N.char) || !cl$N.char %in% names(d)) rep(1, nrow(d)) else as.numeric(d[[cl$N.char]])
-  Y <- as.numeric(d[[cl$Y.char]])
-  p0 <- as.numeric(stats::plogis(null_value + as.numeric(fit$linear_pred)))
+  prov <- factor(fit_prov(fit), levels = lev)
+  N <- fit_N(fit)
+  Y <- fit_Y(fit)
+  p0 <- as.numeric(stats::plogis(null_value + fit_lp(fit)))
   O <- as.numeric(rowsum(Y, prov))
   E <- as.numeric(rowsum(N * p0, prov))
   V0 <- as.numeric(rowsum(N * p0 * (1 - p0), prov))
   Ntot <- as.numeric(rowsum(N, prov))
-  stat <- as.numeric(r$stat[i])
+  stat <- r$stat[i]
   crit <- if (alternative == "two.sided") stats::qnorm(1 - (1 - level) / 2) else stats::qnorm(level)
-  se <- if ("se.gamma" %in% names(r)) as.numeric(r$se.gamma[i]) else rep(NA_real_, length(lev))
+  se <- r$se[i]
   if (test %in% WALD_TYPE) {
     estimate <- gam - null_value
     variance <- se^2
@@ -69,8 +63,8 @@ run_step({
     limit_rule <- if (test %in% c("exact", "exact_bootstrap")) "normal approximation with the null variance (flags are exact)" else "normal, the test's own variance"
     estimate_kind <- "ratio"; precision_kind <- "inverse_null_variance"
   }
-  tab <- data.frame(provider = lev, stat = stat, p = as.numeric(r$p[i]),
-                    flag_raw = as.integer(as.character(r$flag[i])), se = se,
+  tab <- data.frame(provider = lev, stat = stat, p = r$p[i],
+                    flag_raw = r$flag[i], se = se,
                     estimate = estimate, null_value = null_value, ci_lower = ci_lower, ci_upper = ci_upper,
                     observed = O, expected = E, variance = variance, trials = Ntot,
                     n_rows = sizes$n_rows, n_patients = sizes$n_patients,

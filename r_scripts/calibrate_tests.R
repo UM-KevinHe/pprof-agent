@@ -18,10 +18,8 @@
 # chosen on a grid so that the simulated within-patient correlation of standardized residuals matches
 # the observed one (a transparent moment match, recorded in the output).
 source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))), "common.R"))
-source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))), "group_en.R"))
-suppressPackageStartupMessages(library(pprofR))
-TEST_MAP <- c(exact = "exact.poisbinom", score = "score", wald = "wald", robust_wald = "robust_wald",
-              robust_score = "robust_score", stabilized_wald = "stabilized_wald", stabilized_score = "stabilized_score")
+suppressPackageStartupMessages(library(pprof))
+TEST_MAP <- TEST_ARGS[c("exact", "score", "wald", "robust_wald", "robust_score", "stabilized_wald", "stabilized_score")]
 
 run_step({
   t0 <- Sys.time()
@@ -36,31 +34,34 @@ run_step({
   power_on <- is.finite(effect_or) && effect_or > 1
   planted_frac <- as.numeric(arg("planted_frac", 0.05))
   fit <- load_fit(run_dir)
-  cl <- fit$char_list
-  d <- fit$data_include
-  has_pat <- !is.null(cl$PatientID.char)
+  v <- fit$vars
+  has_pat <- !is.null(v$patient)
   clustered <- c("robust_wald", "robust_score", "stabilized_wald", "stabilized_score")
   if (!has_pat) tests <- setdiff(tests, clustered)
   set.seed(seed)
-  lev <- rownames(fit$gamma)
+  lev <- fit_levels(fit)
+  prov_all <- fit_prov(fit)
+  idx <- seq_len(nrow(fit$data))
   if (length(lev) > max_prov) {
     keep <- sort(sample(lev, max_prov))
-    d <- d[pid(d[[cl$prov.char]]) %in% keep, , drop = FALSE]
+    idx <- idx[prov_all[idx] %in% keep]
   }
-  d <- d[order(d[[cl$prov.char]], if (has_pat) d[[cl$PatientID.char]] else seq_len(nrow(d))), , drop = FALSE]
-  Z <- as.matrix(d[, cl$Z.char, drop = FALSE])
-  N <- if (is.null(cl$N.char) || !cl$N.char %in% names(d)) rep(1, nrow(d)) else as.numeric(d[[cl$N.char]])
-  beta <- as.numeric(fit$beta[, 1])
-  gamma0 <- stats::median(as.numeric(fit$gamma[, 1]))
+  pat_all <- if (has_pat) fit_pat(fit) else NULL
+  idx <- idx[order(prov_all[idx], if (has_pat) pat_all[idx] else idx)]
+  d <- fit$data[idx, , drop = FALSE]
+  Z <- as.matrix(d[, v$x, drop = FALSE]); storage.mode(Z) <- "double"
+  N <- fit_N(fit)[idx]
+  Yv <- fit_Y(fit)[idx]
+  beta <- as.numeric(fit_beta(fit))
+  gamma0 <- stats::median(fit_gamma(fit))
   eta0 <- gamma0 + as.numeric(Z %*% beta)
-  prov <- pid(d[[cl$prov.char]])
-  pat <- if (has_pat) paste(prov, pid(d[[cl$PatientID.char]])) else seq_len(nrow(d))
+  prov <- prov_all[idx]
+  pat <- if (has_pat) paste(prov, pat_all[idx]) else seq_len(nrow(d))
   pat_f <- factor(pat, levels = unique(pat))
   n_pat <- nlevels(pat_f)
   # the observed within-patient correlation of standardized residuals, from the real fit
-  pr <- as.numeric(fit$pred[match(rownames(d), rownames(fit$data_include))])
-  if (anyNA(pr)) pr <- as.numeric(stats::plogis(rep(as.numeric(fit$gamma[match(prov, lev), 1]), 1) + as.numeric(Z %*% beta)))
-  e_obs <- (as.numeric(d[[cl$Y.char]]) - N * pr) / sqrt(N * pr * (1 - pr))
+  pr <- fit_pred(fit)[idx]
+  e_obs <- (Yv - N * pr) / sqrt(N * pr * (1 - pr))
   rho_obs <- if (has_pat) within_corr(e_obs, pat_f) else 0
   # the patient random effect scale: the grid value whose simulated correlation is nearest
   grid <- as.numeric(unlist(arg("sigma_grid", c(0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3))))
@@ -92,27 +93,26 @@ run_step({
     }
     b <- stats::rnorm(n_pat, 0, sigma)[as.integer(pat_f)]
     y <- stats::rbinom(nrow(d), N, stats::plogis(eta + b))
-    args_prep <- list(Y = data.frame(Y = y), Z = d[, cl$Z.char, drop = FALSE], ProvID = data.frame(P = prov),
-                      cutoff = 1, check = FALSE, message = FALSE)
-    if (!all(N == 1)) args_prep$N <- data.frame(N = N)
-    if (has_pat) args_prep$PatientID <- data.frame(K = pat)
-    dp <- do.call(fe_data_prep, args_prep)
-    f <- logis_fe(dp, tol = 1e-6, threads = threads(), message = FALSE)
+    sim <- data.frame(.y = y, .prov = prov, .pat = pat, .n = N, stringsAsFactors = FALSE)
+    sim <- cbind(sim, as.data.frame(Z))
+    pd <- pp_data(sim, y = ".y", x = v$x, provider = ".prov", patient = if (has_pat) ".pat" else NULL,
+                  n = if (!all(N == 1)) ".n" else NULL, cutoff = 1, check = FALSE, message = FALSE)
+    f <- fit_logistic_fe(pd, tol = 1e-6, threads = threads(), message = FALSE)
     sizes <- provider_sizes(f)
     for (t in tests) {
-      r <- test_fe(if (t == "wald") wald_fit(f) else f, test = TEST_MAP[[t]], null = "median", level = level, threads = threads())
-      fl <- as.integer(as.character(r$flag))
-      at_norm <- !rownames(r) %in% c(up, down); is_up <- rownames(r) %in% up; is_down <- rownames(r) %in% down
+      r <- run_test(f, t, null = "median", level = level)
+      fl <- r$flag; rp <- r$provider
+      at_norm <- !rp %in% c(up, down); is_up <- rp %in% up; is_down <- rp %in% down
       flags[s, t, "higher"] <- sum(fl[at_norm] == 1, na.rm = TRUE)
       flags[s, t, "lower"] <- sum(fl[at_norm] == -1, na.rm = TRUE)
       hits[s, t, "higher"] <- sum(fl[is_up] == 1, na.rm = TRUE)
       hits[s, t, "lower"] <- sum(fl[is_down] == -1, na.rm = TRUE)
       if (n_tested >= 3 * n_groups) {
-        st <- as.numeric(r$stat)
-        en <- tryCatch(Group_EN(st, sizes$n_patients[match(rownames(r), sizes$provider)], ngroup = n_groups), error = function(e) NULL)
+        en <- tryCatch(group_en(stats::setNames(r$stat, rp), sizes$n_patients[match(rp, sizes$provider)], ngroup = n_groups),
+                       error = function(e) NULL)
         if (!is.null(en)) {
           crit <- stats::qnorm(1 - (1 - level) / 2)
-          z <- en$z_score_GEN
+          z <- en$z_en
           flags_en[s, t, "higher"] <- sum(z[at_norm] > crit, na.rm = TRUE)
           flags_en[s, t, "lower"] <- sum(z[at_norm] < -crit, na.rm = TRUE)
           hits_en[s, t, "higher"] <- sum(z[is_up] > crit, na.rm = TRUE)

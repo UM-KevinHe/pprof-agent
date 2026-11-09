@@ -8,11 +8,11 @@ run_step({
   t0 <- Sys.time()
   run_dir <- arg("run_dir"); n_groups <- as.integer(arg("n_groups", 10))
   fit <- load_fit(run_dir)
-  cl <- fit$char_list; d <- fit$data_include
-  y <- as.numeric(d[[cl$Y.char]])
-  N <- if (is.null(cl$N.char) || !cl$N.char %in% names(d)) rep(1, nrow(d)) else as.numeric(d[[cl$N.char]])
-  pred <- as.numeric(fit$pred); risk <- as.numeric(fit$linear_pred)
-  prov <- pid(d[[cl$prov.char]])
+  d <- fit$data
+  y <- fit_Y(fit)
+  N <- fit_N(fit)
+  pred <- fit_pred(fit); risk <- fit_lp(fit)
+  prov <- fit_prov(fit)
   binary <- all(N == 1)
   auc <- function(yy, pp) {
     n1 <- sum(yy == 1); n0 <- sum(yy == 0)

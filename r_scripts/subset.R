@@ -9,17 +9,17 @@ run_step({
   t0 <- Sys.time()
   run_dir <- arg("run_dir"); provider <- pid(arg("provider"))
   fit <- load_fit(run_dir)
-  cl <- fit$char_list
-  d <- fit$data_include
-  lev <- rownames(fit$gamma)
+  v <- fit$vars
+  d <- fit$data
+  lev <- fit_levels(fit)
   if (!provider %in% lev) stop("provider ", provider, " is not among the fitted providers", call. = FALSE)
-  by <- chr(arg("by", cl$Z.char))
-  by <- head(by[by %in% cl$Z.char], as.integer(arg("max_by", 8)))
-  N <- if (is.null(cl$N.char) || !cl$N.char %in% names(d)) rep(1, nrow(d)) else as.numeric(d[[cl$N.char]])
-  Y <- as.numeric(d[[cl$Y.char]])
-  gamma0 <- stats::median(as.numeric(fit$gamma[, 1]))
-  p0 <- as.numeric(stats::plogis(gamma0 + as.numeric(fit$linear_pred)))
-  sel <- pid(d[[cl$prov.char]]) == provider
+  by <- chr(arg("by", v$x))
+  by <- head(by[by %in% v$x], as.integer(arg("max_by", 8)))
+  N <- fit_N(fit)
+  Y <- fit_Y(fit)
+  gamma0 <- stats::median(fit_gamma(fit))
+  p0 <- as.numeric(stats::plogis(gamma0 + fit_lp(fit)))
+  sel <- fit_prov(fit) == provider
   rows <- list(data.frame(group = "all rows", level = "all", n = sum(sel), observed = sum(Y[sel]), expected = sum(N[sel] * p0[sel]),
                           stringsAsFactors = FALSE))
   casemix <- list()

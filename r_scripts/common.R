@@ -80,42 +80,69 @@ q5 <- function(x) {
 # provider ids as character, always
 pid <- function(x) as.character(x)
 
-# the fitted pprofR object and the names it was fitted under
+# the fitted model: a `logistic_fe` object of the pprof R package (2.0 or later), and accessors for
+# what the scripts read from it
 load_fit <- function(run_dir) {
   p <- fit_path(run_dir)
   if (!file.exists(p)) stop("no fitted model in the run directory (run `fit` first)", call. = FALSE)
   readRDS(p)
 }
+fit_levels <- function(fit) names(fit$coefficients$gamma)
+fit_gamma <- function(fit) as.numeric(fit$coefficients$gamma)
+fit_beta <- function(fit) fit$coefficients$beta
+fit_Y <- function(fit) as.numeric(fit$data[[fit$vars$y]])
+fit_N <- function(fit) if (is.null(fit$vars$n)) rep(1, nrow(fit$data)) else as.numeric(fit$data[[fit$vars$n]])
+fit_prov <- function(fit) pid(fit$data[[fit$vars$provider]])
+fit_pat <- function(fit) if (is.null(fit$vars$patient)) NULL else pid(fit$data[[fit$vars$patient]])
+fit_Z <- function(fit) { z <- as.matrix(fit$data[, fit$vars$x, drop = FALSE]); storage.mode(z) <- "double"; z }
+fit_pred <- function(fit) as.numeric(fit$fitted)
+fit_lp <- function(fit) as.numeric(fit$linear_predictor)
 
-# rows and patients per fitted provider, in the order of fit$gamma
+# rows and patients per fitted provider, in the order of the provider effects
 provider_sizes <- function(fit) {
-  cl <- fit$char_list
-  d <- fit$data_include
-  lev <- rownames(fit$gamma)
-  prov <- factor(pid(d[[cl$prov.char]]), levels = lev)
-  n_rows <- as.integer(table(prov))
-  if (!is.null(cl$PatientID.char)) {
-    pp <- unique(data.frame(p = pid(d[[cl$prov.char]]), k = pid(d[[cl$PatientID.char]]), stringsAsFactors = FALSE))
-    n_pat <- as.integer(table(factor(pp$p, levels = lev)))
-  } else {
-    n_pat <- n_rows
-  }
-  data.frame(provider = lev, n_rows = n_rows, n_patients = n_pat, stringsAsFactors = FALSE)
+  s <- fit$sizes
+  n_pat <- if (all(is.na(s$patients))) s$rows else s$patients
+  data.frame(provider = pid(s$provider), n_rows = as.integer(s$rows), n_patients = as.integer(n_pat),
+             stringsAsFactors = FALSE)
+}
+
+# the agent's test names -> the arguments of pprof::test(); the naive Wald test uses pprof's case-mix
+# variance, which does not depend on where the covariates are centred
+TEST_ARGS <- list(
+  exact = list(statistic = "exact", variance = "naive", exact_method = "poibin"),
+  exact_bootstrap = list(statistic = "exact", variance = "naive", exact_method = "bootstrap"),
+  score = list(statistic = "score", variance = "naive"),
+  wald = list(statistic = "wald", variance = "naive"),
+  robust_wald = list(statistic = "wald", variance = "robust"),
+  robust_score = list(statistic = "score", variance = "robust"),
+  stabilized_wald = list(statistic = "wald", variance = "stabilized"),
+  stabilized_score = list(statistic = "score", variance = "stabilized"))
+
+# one provider test; a data frame in the order of the provider effects: provider, stat, p, flag (1 above
+# the null, -1 below, 0 as expected, NA not testable), se (Wald-type tests only)
+run_test <- function(fit, test, null = "median", level = 0.95, alternative = "two.sided", n_resample = 10000) {
+  a <- TEST_ARGS[[test]]
+  if (is.null(a)) stop("unknown test: ", test, call. = FALSE)
+  r <- do.call(pprof::test, c(list(fit, null = null, level = level, alternative = alternative,
+                                   n_resample = as.integer(n_resample)), a))
+  data.frame(provider = pid(r$provider), stat = as.numeric(r$statistic), p = as.numeric(r$p),
+             flag = as.integer(r$flag), se = as.numeric(r$se), stringsAsFactors = FALSE)
+}
+
+# the size-stratified empirical null (pprof::null_model): providers ordered by size and cut into `ngroup`
+# equal groups; within each, a Huber M-estimate of location and a MAD scale define the null, and the
+# statistic is re-centred and re-scaled. Non-finite statistics are left out of the fit and get NA.
+group_en <- function(z, size, ngroup = 4) {
+  nm <- pprof::null_model("empirical", z = z, size = size, n_groups = ngroup, grouping = "cut",
+                          estimator = "huber", fit_mask = is.finite(z))
+  dg <- nm$diagnostics
+  tab <- data.frame(group = dg$group, n = dg$n_fitted, min_size = dg$min_size, median_size = dg$median_size,
+                    max_size = dg$max_size, location = dg$null_mean, scale = dg$null_sd, mean = dg$mean_z,
+                    sd = dg$sd_z)
+  list(z_en = as.numeric(pprof::adjust_z(z, nm)), group_idx = as.integer(nm$group), group_inf = tab, null = nm)
 }
 
 seconds_since <- function(t0) as.numeric(Sys.time() - t0, units = "secs")
-
-# pprofR's model-based Wald standard error adds the uncertainty of beta evaluated at Z = 0, so it changes with
-# where the covariates are centred (AGE in years or in years minus 65 gives different flags), while the test
-# compares a provider with the median provider, where that part largely cancels. The Wald test is therefore
-# run on a copy of the fit with the adjusters centred: the effect difference in the numerator does not move,
-# and no other test may read this copy (the score and exact tests evaluate Z beta at the null directly).
-wald_fit <- function(fit) {
-  zc <- fit$char_list$Z.char
-  f <- fit
-  f$data_include[zc] <- lapply(f$data_include[zc], function(x) x - mean(x))
-  f
-}
 
 # the within-patient correlation of standardized residuals: over patients with >= 2 rows, the mean pairwise
 # product (the fit reports it; the calibration simulation matches its patient random effect to it)

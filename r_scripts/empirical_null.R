@@ -1,9 +1,9 @@
-# empirical_null.R -- the size-stratified empirical null (Group_EN) applied to one test's statistics.
+# empirical_null.R -- the size-stratified empirical null (pprof::null_model) applied to one test's statistics.
 # payload: {run_dir, key (the test table), n_groups (4), size_by: patients|rows, level (0.95), crit}
 # writes tables/en_<key>.csv (the test table's display columns with z_en, group, flag_en_raw and the
 # funnel limits re-drawn under the group's null) and tables/en_groups_<key>.csv.
 source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))), "common.R"))
-source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))), "group_en.R"))
+suppressPackageStartupMessages(library(pprof))
 WALD_TYPE <- c("wald", "robust_wald", "stabilized_wald")
 run_step({
   t0 <- Sys.time()
@@ -15,8 +15,8 @@ run_step({
   test <- sub("_.*$", "", key)   # the key is the test name unless the harness suffixes it
   wald_type <- any(startsWith(key, WALD_TYPE))
   size <- if (identical(size_by, "rows")) tab$n_rows else tab$n_patients
-  en <- Group_EN(tab$stat, size, ngroup = n_groups)
-  z <- en$z_score_GEN
+  en <- group_en(stats::setNames(as.numeric(tab$stat), pid(tab$provider)), size, ngroup = n_groups)
+  z <- en$z_en
   gi <- en$group_inf
   loc <- gi$location[en$group_idx]; sc <- gi$scale[en$group_idx]
   out <- tab

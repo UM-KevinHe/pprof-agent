@@ -1,4 +1,4 @@
-"""End to end on synthetic data: needs R, pprofR, grplasso and PPROF_AGENT_DATA=<dir with data.csv, truth.json>."""
+"""End to end on synthetic data: needs R with pprof (2.0 or later) and PPROF_AGENT_DATA=<dir with data.csv, truth.json>."""
 import json
 import os
 import re
