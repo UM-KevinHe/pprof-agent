@@ -130,3 +130,19 @@ def test_reply_sets_trials_by_number():
     prof = {"columns": [{"name": "HOSP_DAYS", "binary": False}, {"name": "DAYS_AT_RISK", "binary": False}], "candidates": {}}
     sp, probs = S.parse_reply("12) DAYS_AT_RISK", S.MeasureSpecification(outcome="HOSP_DAYS"), prof)
     assert not probs and sp.trials == "DAYS_AT_RISK" and sp.sources["trials"] == "asked"
+
+
+def test_phrases_fill_unit_direction_and_eligibility_the_model_left_open():
+    msg = ("This file is the AOH measure. The outcome is AOH_DAYS out of DAYS_AT_RISK, one row per patient-month, "
+           "and a higher rate is better. FACILITY identifies the facility. Leave out facilities with fewer than 11 patients.")
+    found = dict((f, (v, e)) for f, v, e in S.read_phrases(msg))
+    assert found["unit"][0] == "patient_month" and "row per patient-month" in found["unit"][1]
+    assert found["event_direction"][0] == "higher_is_better"
+    assert found["eligibility"][0] == 11
+    sp, notes = S.fill_from_phrases(S.MeasureSpecification(outcome="AOH_DAYS", event_direction="higher_is_worse"), msg)
+    assert sp.unit == "patient_month" and sp.sources["unit"] == "quoted"
+    assert sp.event_direction == "higher_is_worse"            # a field the model settled is never overwritten
+    assert sp.eligibility == 11 and len(notes) == 2
+    assert S.read_phrases("Which facilities are flagged worse than expected?") == []
+    assert dict((f, v) for f, v, _ in S.read_phrases("each row is an index discharge; a lower rate is better"))["unit"] == "index_discharge"
+    assert dict((f, v) for f, v, _ in S.read_phrases("a lower rate is better"))["event_direction"] == "higher_is_worse"

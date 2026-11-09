@@ -87,7 +87,7 @@ flowchart LR
 cd site && python -m http.server 8000      # then open http://localhost:8000
 ```
 
-**The agent itself** needs R (≥ 4.5) with the `pprofR` and `grplasso` packages (the engine; see [UM-KevinHe/pprof](https://github.com/UM-KevinHe/pprof)) and Python 3.11 with `pprof_py`, `pandas`, `openai`, `fastapi`, `uvicorn`. The language model is Qwen3-8B (AWQ) served by vLLM with constrained JSON decoding:
+**The agent itself** needs R (≥ 4.5) with the [`pprof`](https://github.com/UM-KevinHe/pprof) package, version 2.0 or later (`remotes::install_github("UM-KevinHe/pprof@Yubo")`), and Python 3.11 with `pprof_py`, `pandas`, `openai`, `fastapi`, `uvicorn`. The language model is Qwen3-8B (AWQ) served by vLLM with constrained JSON decoding:
 
 ```bash
 vllm serve Qwen/Qwen3-8B-AWQ --port 8000 --served-model-name qwen3-8b-awq \

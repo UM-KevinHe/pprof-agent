@@ -145,6 +145,62 @@ def resolve_column(profile: Dict[str, Any], text: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------------------- completion
+
+# ----------------------------------------------------------------- fixed phrasings read by rule
+# The language model quotes the fields out of the message; when it leaves one of these open although the message
+# states it in one of the usual phrasings, the harness reads it by rule from the analyst's own words. Nothing is
+# inferred: each pattern is a verbatim statement of the field, and its match is kept as the evidence.
+_UNIT_WORDS = (("patient month", "patient_month"), ("patient-month", "patient_month"), ("patient year", "patient_year"),
+               ("patient-year", "patient_year"), ("index discharge", "index_discharge"), ("patient record", "patient_record"),
+               ("patient-record", "patient_record"))
+_UNIT_RE = re.compile(r"\brows?\s+(?:is|are|per|=|represents?|stands?\s+for|for)\s+(?:a\s+|an\s+|one\s+|the\s+)?"
+                      r"(patient[\s-]month|patient[\s-]year|index[\s-]discharge|patient[\s-]record)\b", re.I)
+_DIRECTION_RE = re.compile(r"\b(higher|lower)\s+(?:event\s+)?(?:rate|value|percentage|share)\s+(?:is|means|counts\s+as)\s+"
+                           r"(better|worse)\b", re.I)
+_ELIGIBILITY_RES = (re.compile(r"\bfewer\s+than\s+(\d+)\s+patients\b", re.I),
+                    re.compile(r"\bat\s+least\s+(\d+)\s+patients\b", re.I),
+                    re.compile(r"\b(\d+)\s+or\s+more\s+patients\b", re.I),
+                    re.compile(r"\bunder\s+(\d+)\s+patients\b", re.I))
+
+
+def read_phrases(text: str) -> List[Tuple[str, Any, str]]:
+    """The fields a message states in a fixed phrasing: (field, value, evidence) for the unit ("one row per
+    patient-month"), the event direction ("a higher rate is better") and the eligibility threshold ("fewer than
+    11 patients", "at least 11 patients")."""
+    out: List[Tuple[str, Any, str]] = []
+    m = _UNIT_RE.search(text or "")
+    if m:
+        key = re.sub(r"[\s-]+", " ", m.group(1).lower())
+        value = dict((k.replace("-", " "), v) for k, v in _UNIT_WORDS).get(key)
+        if value:
+            out.append(("unit", value, m.group(0)))
+    m = _DIRECTION_RE.search(text or "")
+    if m:
+        higher = m.group(1).lower() == "higher"
+        good = m.group(2).lower() == "better"
+        out.append(("event_direction", "higher_is_better" if higher == good else "higher_is_worse", m.group(0)))
+    for rx in _ELIGIBILITY_RES:
+        m = rx.search(text or "")
+        if m:
+            out.append(("eligibility", int(m.group(1)), m.group(0)))
+            break
+    return out
+
+
+def fill_from_phrases(spec: MeasureSpecification, text: str) -> Tuple[MeasureSpecification, List[str]]:
+    """Set the fields `read_phrases` finds that the specification still leaves open; the source is `quoted`
+    and a note records the phrase. Returns the specification and the notes added."""
+    sp = spec
+    notes: List[str] = []
+    for field, value, evidence in read_phrases(text):
+        if getattr(sp, field, None) is None:
+            sp = sp.set(field, value, "quoted")
+            note = f"{field}: read from the words \"{evidence}\""
+            sp = sp.note(note)
+            notes.append(note)
+    return sp, notes
+
+
 @dataclass
 class OpenItem:
     field: str

@@ -112,6 +112,7 @@ class Agent:
             before = s.spec.config()
             spec, notes = boundary.extract_specification(self.client, self.model, message, s.profile, s.spec,
                                                          record_to=s.model_calls)
+            spec, _ = S.fill_from_phrases(spec, message)      # the fixed phrasings the model left out, read by rule
             s.spec = spec
             prefix = [f"Not taken: {n}" for n in notes]
             if s.phase == "DONE" and spec.config() == before:
